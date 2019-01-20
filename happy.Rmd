@@ -1,0 +1,211 @@
+---
+title: "Prediction of happiness level using hypothesis testing and variable selection"
+output:
+  html_document:
+    df_print: paged
+---
+```{r}
+list.of.packages <- c("printr","Metrics","leaps","MASS","caret",
+"gghalfnorm","glmnet","ModelMetrics","ISLR",
+"ggplot2","dplyr","faraway","knitr","reshape2")
+new.packages <- list.of.packages[!(
+list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+```
+
+
+```{r}
+#Loading Libraies
+library(faraway)
+library(dplyr)
+library(ggplot2)
+library(ISLR)
+library(knitr)
+library(printr)
+library(Metrics)
+library(leaps)
+library(MASS)
+library(caret)
+library(gghalfnorm)
+library(glmnet)
+```
+Let's see the distribution of the values from the \textit{happy} dataset
+```{r}
+#Loading Data
+data(happy)
+row = dim(happy)[1]
+col = dim(happy)[2]
+c("1"=0,table(happy$happy))
+```
+As you can see there is noboyd in the value 1. Nobody gave the happiness rating as 1 in the observations. 
+
+```{r}
+table(happy$sex)
+
+```
+
+
+```{r}
+table(happy$love)
+
+```
+
+
+```{r}
+table(happy$work)
+```
+
+
+$\textbf{Exploratory Data Analysis:}$ 
+
+
+
+```{r}
+#Histogrram for Happinness
+a <- ggplot(happy, aes(x = factor(happy),fill=factor(happy)))
+a + geom_bar(aes(fill = factor(happy))) + xlab("Happy")+ylab("Count")+
+labs(title = "Histogram of Happiness Level",fill = "Happy") +
+theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r}
+#Pie Chart for money
+cxc <- ggplot(happy, aes(x = factor(money))) +
+geom_bar(width = 1, colour = "black")
+cxc + coord_polar()+ xlab("Money")+ylab("Count")+
+labs(title = "Pie Chart of Money") + theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r}
+#Histogram for Sex
+a <- ggplot(happy, aes(x=factor(sex),fill=factor(sex)))
+a + geom_bar(aes(fill = factor(sex))) + xlab("Sex")+
+ylab("Count")+labs(title = "Histogram of Sex",fill = "Sex") +
+theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r}
+#Histogram for Love
+a <- ggplot(happy, aes(x=factor(love),fill=factor(love)))
+a + geom_bar(aes(fill = factor(love))) + xlab("Love")+ylab("Count")+
+labs(title = "Histogram of Love",fill = "Love") +
+theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r}
+#Histogram for work
+a <- ggplot(happy, aes(x=factor(work),fill=factor(work)))
+a + geom_bar(aes(fill = factor(work))) + xlab("Work")+ylab("Count")+
+labs(title = "Histogram of Work",fill = "Work") +
+theme(plot.title = element_text(hjust=0.5))
+```
+
+
+
+```{r}
+#pairwise scatter plot
+pairs(happy)
+```
+
+
+
+
+
+```{r}
+#covariance matrix and VIF
+round(cor(happy),3)
+
+```
+Seems like sex has no effect on the happiness level from the correlation matrix.
+
+```{r}
+#regression with all terms
+all<-lm(happy~.,data=happy) #all coef should be positive
+summary(all)
+```
+
+
+```{r}
+vif(happy)
+```
+
+```{r}
+#regression without sex,
+nosex<-lm(happy~ money+love+work,data=happy)
+summary(nosex)
+anova(nosex,all)
+```
+
+```{r}
+#subset selection
+b <- regsubsets(happy~.,data=happy)
+summary(b)
+rs <- summary(b)
+```
+We select the best model for each size from 1 to 4, and observed that for size $n = 3$, the model without sex is the best model.
+
+
+```{r}
+#####Plot AIC
+AIC <- 50*log(rs$rss/50) + (2:5)*2
+plot(AIC~I(1:4),ylab="AIC",xlab="Number of Predictors",type="l",lwd=2,main = "Variable Selection using AIC")
+points(AIC)
+```
+
+
+```{r}
+###Plot Cp
+plot(1:4,rs$cp,xlab="Number of Predictors",
+ylab="Cp Statistic",type="l",lwd=2,
+main = "Variable Selection using C_p")
+points(1:4,rs$cp)
+```
+Hence we should remove sex from our model.
+
+```{r}
+#regression without sex,
+nosex<-lm(happy~ money+love+work,data=happy)
+summary(nosex)
+```
+We can see from above that at a significance level of $\alpha = 0.05$, money is not a significant predictor. We proceed by removing money from the model in which we previously removed the intercept and sex as a predictor.
+```{r}
+#regression without intercept and sex
+nointsex<-lm(happy~ money+love+work-1,data=happy)
+summary(nointsex)
+anova(nointsex,nosex)
+```
+
+```{r}
+#regression without int,sex and money
+nointsexmoney<-lm(happy~love+work-1,data=happy)
+summary(nointsexmoney)
+```
+Removing money gives us a simpler model, but only leads to a small reduction in $R^2$. We proceed by carrying our further investigation and analysis to determine whether or not we should keep money in our model.
+```{r}
+#squareroot money
+rootmoney<-lm(happy~ sqrt(money)+love+work-1,data=happy)
+summary(rootmoney)
+AIC(all,nosex,nointsex,nointsexmoney,rootmoney)
+```
+
+```{r}
+#prediction
+X <- model.matrix(rootmoney)
+x_zero<-as.data.frame(apply(X,2,quantile))
+x_zero$money<-x_zero$"sqrt(money)"^2
+x_zero$"sqrt(money)"<-NULL
+betahat <- coef(rootmoney)
+muhat<-as.matrix(x_zero)%*%c(as.matrix(betahat))
+n <- dim(X)[1]
+p<-3
+predict(rootmoney,x_zero,interval="prediction",level=0.95)
+```
+
+
+Take, as an example, a person with stats in the 25% quantile (with secure relationships, an ok job, and a salary of ($\$42.48 k$). Our model predicts with 95% confidence that this person will have a happiness rating in
+$(3.62628012, 7.722550)$ This implies that even if a person makes only $\$42k$, there is still a chance that that person is feeling quiet happy, ($happy = 7$), given that he/she is in a secure relationship and has an ok job.
+
+
+$\textbf{Conclusion:}$ 
+
+Based on the regression analysis that we have carried out, we have determined that our happiness can be predicted based on our money, love and work, but that our rating of sex in insignificant in making this prediction. The model that removes the intercept and the predictor sex, but takes the square root of money provides the best fit for predictions of happy for the observations given in the dataset.
